@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MNIST Neural Network Training Visualizer</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="importmap">
+    { "imports": { "fs": "/shims/fs.js" } }
+  </script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="hud-header">
+      <div class="header-branding">
+        <div class="logo-mark">
+          <span class="pulse-indicator"></span>
+          <span class="logo-title">MNIST NN TRAINING VISUALIZER</span>
+        </div>
+        <div class="mode-badge" id="mode-badge">
+          <span class="badge-dot"></span>
+          <span id="mode-text">READY</span>
+        </div>
+      </div>
+
+      <!-- Architecture & Stats -->
+      <div class="network-metrics">
+        <div class="metric-card">
+          <span class="metric-label">ARCHITECTURE</span>
+          <span class="metric-value code-font" id="arch-display">784 → 3 → 3 → 10</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">TOTAL NEURONS</span>
+          <span class="metric-value code-font" id="metric-neurons">800</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">CONNECTIONS</span>
+          <span class="metric-value code-font" id="metric-connections">2,391</span>
+        </div>
+      </div>
+
+      <!-- Training Config -->
+      <div class="training-config">
+        <div class="config-group">
+          <label for="epochs-input">EPOCHS</label>
+          <input type="number" id="epochs-input" value="3" min="1" max="100">
+        </div>
+        <div class="config-group">
+          <label for="lr-input">LEARNING RATE</label>
+          <input type="number" id="lr-input" value="0.1" min="0.001" max="1" step="0.01">
+        </div>
+        <div class="config-group">
+          <label for="samples-input">SAMPLES/EP</label>
+          <input type="number" id="samples-input" value="3000" min="10" max="60000" step="100">
+        </div>
+        <div class="config-group">
+          <label for="speed-input">SPEED/S</label>
+          <input type="number" id="speed-input" value="60" min="1" max="500">
+        </div>
+      </div>
+
+      <!-- Training Controls -->
+      <div class="hud-controls">
+        <label class="viz-toggle turbo-toggle" title="Use all CPU cores for mini-batch parallel training">
+          <input type="checkbox" id="turbo-mode"> TURBO
+        </label>
+        <button id="btn-train" class="control-btn primary" title="Start training">
+          <span class="btn-icon">▶</span> TRAIN
+        </button>
+        <button id="btn-pause" class="control-btn" title="Pause training" disabled>
+          <span class="btn-icon">⏸</span> PAUSE
+        </button>
+        <button id="btn-stop" class="control-btn danger" title="Stop training" disabled>
+          <span class="btn-icon">⏹</span> STOP
+        </button>
+        <button id="btn-step" class="control-btn" title="Step one sample">
+          <span class="btn-icon">⏭</span> STEP
+        </button>
+        <button id="btn-reset" class="control-btn" title="Reset network to fresh random weights">
+          <span class="btn-icon">⟳</span> RESET
+        </button>
+      </div>
+
+      <!-- Live Training Stats -->
+      <div class="live-stats" id="live-stats" style="display: none;">
+        <div class="stat-item">
+          <span class="stat-label">EPOCH</span>
+          <span class="stat-value code-font" id="stat-epoch">0/0</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">SAMPLE</span>
+          <span class="stat-value code-font" id="stat-sample">0/0</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">LOSS</span>
+          <span class="stat-value code-font" id="stat-loss">--</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">AVG LOSS</span>
+          <span class="stat-value code-font" id="stat-avgloss">--</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">ACCURACY</span>
+          <span class="stat-value code-font" id="stat-acc">--%</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">TARGET</span>
+          <span class="stat-value code-font" id="stat-target">-</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">PREDICTED</span>
+          <span class="stat-value code-font" id="stat-pred">-</span>
+        </div>
+      </div>
+
+      <!-- Progress Bar -->
+      <div class="progress-container" id="progress-container" style="display: none;">
+        <div class="progress-bar" id="progress-bar"></div>
+        <span class="progress-text" id="progress-text">0%</span>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Left: NN Visualization -->
+      <section class="viz-panel">
+        <div class="panel-header">
+          <h3>NEURAL NETWORK STATE</h3>
+          <div class="viz-controls">
+            <label class="viz-toggle">
+              <input type="checkbox" id="show-weights" checked> WEIGHTS
+            </label>
+            <label class="viz-toggle">
+              <input type="checkbox" id="show-activations" checked> ACTIVATIONS
+            </label>
+            <label class="viz-toggle">
+              <input type="checkbox" id="show-gradients"> GRADIENTS
+            </label>
+            <select id="color-mode" class="viz-select">
+              <option value="weight">WEIGHT MAGNITUDE</option>
+              <option value="change">WEIGHT CHANGE</option>
+              <option value="activation">ACTIVATION</option>
+              <option value="gradient">GRADIENT</option>
+              <option value="sign">SIGN (blue/red)</option>
+            </select>
+          </div>
+        </div>
+        <div class="canvas-viewport" id="canvas-container"></div>
+        <div class="layer-legend" id="layer-legend"></div>
+      </section>
+
+      <!-- Right: Playground + Charts -->
+      <aside class="charts-panel">
+        <!-- Playground -->
+        <div class="play-panel">
+          <div class="play-header">
+            <h3>PLAYGROUND <span class="play-hint">draw · predict · backprop — runs in your browser</span></h3>
+            <span class="play-source" id="play-source">server model</span>
+          </div>
+
+          <div class="play-row">
+            <div class="pad-wrap">
+              <canvas id="draw-pad" width="280" height="280"></canvas>
+            </div>
+            <div class="play-side">
+              <div class="preview-wrap" title="28×28 vector fed to the network">
+                <canvas id="preview-28" width="28" height="28"></canvas>
+                <span>28×28</span>
+              </div>
+              <div class="play-btn-col">
+                <button id="btn-brush" class="control-btn small active-tool">BRUSH</button>
+                <button id="btn-erase" class="control-btn small">ERASE</button>
+                <button id="btn-clear-pad" class="control-btn small">CLEAR</button>
+                <label class="brush-size-label">SIZE
+                  <input type="range" id="brush-size" min="4" max="34" value="13">
+                </label>
+                <label class="viz-toggle small-toggle"><input type="checkbox" id="pad-invert"> INVERT</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="play-controls">
+            <div class="config-group">
+              <label for="play-target">TARGET</label>
+              <select id="play-target" class="viz-select">
+                <option value="-1">auto = prediction</option>
+              </select>
+            </div>
+            <div class="config-group">
+              <label for="play-lr">LR</label>
+              <input type="number" id="play-lr" value="0.1" min="0.0001" max="1" step="0.01">
+            </div>
+            <button id="btn-backprop" class="control-btn primary small" title="One backprop step on the current drawing">BACKPROP STEP</button>
+            <button id="btn-reset-local" class="control-btn small" title="Fresh random weights in the browser (server unchanged)">RESET NET</button>
+          </div>
+
+          <div class="play-controls">
+            <button id="btn-random-sample" class="control-btn small">RANDOM TEST IMAGE</button>
+            <label class="control-btn small file-btn">LOAD IMAGE<input type="file" id="img-upload" accept="image/*" hidden></label>
+            <label class="control-btn small file-btn">UPLOAD MODEL<input type="file" id="model-upload" accept=".json,application/json" hidden></label>
+            <button id="btn-download-model" class="control-btn small" title="Download current browser network as model.json">DOWNLOAD NET</button>
+          </div>
+
+          <div class="sample-strip" id="sample-strip"></div>
+          <div class="play-info" id="play-info">Draw a digit, click a test sample, or load an image…</div>
+        </div>
+
+        <!-- Live Prediction -->
+        <div class="chart-container short">
+          <h4>LIVE PREDICTION — output neuron values</h4>
+          <canvas id="pred-chart"></canvas>
+        </div>
+
+        <!-- Loss Chart -->
+        <div class="chart-container">
+          <h4>TRAINING LOSS
+            <span class="chart-toggles">
+              <label class="viz-toggle small-toggle"><input type="checkbox" id="loss-log"> log Y</label>
+              <label class="viz-toggle small-toggle"><input type="checkbox" id="loss-ema" checked> EMA</label>
+            </span>
+          </h4>
+          <canvas id="loss-chart"></canvas>
+        </div>
+
+        <!-- Accuracy Chart -->
+        <div class="chart-container">
+          <h4>TRAINING ACCURACY</h4>
+          <canvas id="acc-chart"></canvas>
+        </div>
+
+        <!-- Per-Epoch Chart -->
+        <div class="chart-container">
+          <h4>EPOCH SUMMARY</h4>
+          <canvas id="epoch-chart"></canvas>
+        </div>
+
+        <!-- Playground backprop steps -->
+        <div class="chart-container">
+          <h4>PLAYGROUND BACKPROP — loss & target confidence</h4>
+          <canvas id="play-chart"></canvas>
+        </div>
+      </aside>
+    </main>
+
+    <!-- Tooltip -->
+    <div id="inspector-tooltip" class="tooltip hidden">
+      <div class="tooltip-header" id="tooltip-title">Info</div>
+      <div class="tooltip-body" id="tooltip-content">Hover to inspect</div>
+    </div>
+  </div>
+
+  <!-- Load the REAL NN/Network.js into the browser (fs shimmed via import map) -->
+  <script type="module">
+    import { Network } from "/NN/Network.js";
+    window.Network = Network;
+    window.dispatchEvent(new Event("netlib-ready"));
+  </script>
+  <script src="sketch.js"></script>
+</body>
+</html>

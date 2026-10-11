@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MNIST Neural Network Simulation & Playground</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "fs": "./shims/fs.js"
+      }
+    }
+  </script>
+  <!-- Standalone Bundled MNIST Samples & Default Model -->
+  <script src="data/samples.js"></script>
+  <script src="data/default-model.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top HUD Navigation -->
+    <header class="hud-header">
+      <div class="header-left">
+        <div class="brand">
+          <div class="brand-icon">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <span class="brand-title">MNIST NN SIMULATION</span>
+        </div>
+        <div class="status-badge emerald" id="status-badge">
+          <span class="dot"></span>
+          <span id="status-text">READY</span>
+        </div>
+      </div>
+
+      <!-- Network Architecture & Synapse Counters -->
+      <div class="header-stats">
+        <div class="hud-stat">
+          <span class="hud-stat-label">ARCHITECTURE</span>
+          <span class="hud-stat-val code-font" id="arch-display">784 → 16 → 16 → 10</span>
+        </div>
+        <div class="hud-stat">
+          <span class="hud-stat-label">TOTAL NEURONS</span>
+          <span class="hud-stat-val code-font" id="neurons-count">826</span>
+        </div>
+        <div class="hud-stat">
+          <span class="hud-stat-label">CONNECTIONS</span>
+          <span class="hud-stat-val code-font" id="synapses-count">13,018</span>
+        </div>
+      </div>
+
+      <!-- Model Actions -->
+      <div class="header-actions">
+        <button id="btn-load-model" class="btn btn-sm" title="Load pre-trained weights from model.json">LOAD MODEL</button>
+        <button id="btn-export-model" class="btn btn-sm" title="Export current network weights as model.json">EXPORT NET</button>
+        <button id="btn-reset-net" class="btn btn-sm btn-danger" title="Reset all weights to fresh random Xavier distribution">RESET</button>
+        <input type="file" id="model-file-input" accept=".json" hidden>
+      </div>
+    </header>
+
+    <!-- Main Stage Grid -->
+    <main class="main-stage">
+      <!-- Left: Interactive Visualizer & Sample HUD -->
+      <section class="viz-section">
+        <div class="viz-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>NEURAL NETWORK STRUCTURE & SIGNALS</span>
+            </div>
+            <div class="viz-toggles">
+              <label class="toggle-label" title="Show or hide synaptic connection lines">
+                <input type="checkbox" id="toggle-weights" checked> CONNECTIONS
+              </label>
+              <label class="toggle-label" title="Hide very faint near-zero weights for clarity">
+                <input type="checkbox" id="filter-weak-toggle"> HIDE WEAK
+              </label>
+            </div>
+          </div>
+
+          <!-- Canvas Viewport -->
+          <div class="canvas-viewport" id="canvas-container">
+            <canvas id="network-canvas"></canvas>
+          </div>
+        </div>
+
+        <!-- Current Sample Image & Target vs Prediction HUD -->
+        <div class="sample-status-card">
+          <div class="sample-meta">
+            <div class="sample-thumb-wrap" title="Current 28×28 MNIST sample image fed into the input layer">
+              <canvas id="sample-preview-canvas" width="28" height="28"></canvas>
+            </div>
+            <div class="sample-details">
+              <span class="sample-filename code-font" id="sample-name">7_000042.png</span>
+              <div class="sample-stats-row">
+                <span><span class="label">TRUE TARGET:</span> <strong id="sample-target" class="code-font font-bold">7</strong></span>
+                <span><span class="label">PREDICTED:</span> <strong id="sample-pred" class="code-font font-bold">7</strong></span>
+                <span id="sample-eval"><span class="badge-eval correct">✓ CORRECT</span></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Digit Selectors -->
+          <div class="digits-strip">
+            <button class="btn btn-sm" id="btn-random-sample">🎲 RANDOM TEST</button>
+            <button class="digit-btn" data-digit="0">0</button>
+            <button class="digit-btn" data-digit="1">1</button>
+            <button class="digit-btn" data-digit="2">2</button>
+            <button class="digit-btn" data-digit="3">3</button>
+            <button class="digit-btn" data-digit="4">4</button>
+            <button class="digit-btn" data-digit="5">5</button>
+            <button class="digit-btn" data-digit="6">6</button>
+            <button class="digit-btn" data-digit="7">7</button>
+            <button class="digit-btn" data-digit="8">8</button>
+            <button class="digit-btn" data-digit="9">9</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right: Controls & Custom Drawing Playground -->
+      <aside class="controls-sidebar">
+        <!-- 1. Architecture & Hyperparameters Card -->
+        <div class="sidebar-card">
+          <h3>ARCHITECTURE & HYPERPARAMETERS</h3>
+
+          <div class="form-group">
+            <label class="form-label" for="hidden-layers-input">
+              <span>HIDDEN LAYERS (NODES PER LAYER)</span>
+            </label>
+            <div style="display: flex; gap: 6px;">
+              <input type="text" id="hidden-layers-input" class="input-text" value="16, 16" placeholder="e.g. 16, 16 or 3, 3">
+              <button id="btn-apply-arch" class="btn btn-primary btn-sm">APPLY</button>
+            </div>
+            <div class="presets-row">
+              <button class="preset-btn" data-arch="3, 3">CLI [3, 3]</button>
+              <button class="preset-btn" data-arch="16">Fast [16]</button>
+              <button class="preset-btn" data-arch="16, 16">Deep [16, 16]</button>
+              <button class="preset-btn" data-arch="32, 16">Wide [32, 16]</button>
+            </div>
+          </div>
+
+          <div class="grid-2col">
+            <div class="form-group">
+              <label class="form-label" for="epochs-input">EPOCHS</label>
+              <input type="number" id="epochs-input" class="input-text" value="3" min="1" max="50">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="lr-input">LEARNING RATE</label>
+              <input type="number" id="lr-input" class="input-text" value="0.1" min="0.001" max="1" step="0.01">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <div class="form-label">
+              <span>TRAIN SPEED</span>
+              <span id="speed-val" class="code-font">50 steps/s</span>
+            </div>
+            <input type="range" id="speed-input" min="1" max="200" value="50">
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label class="toggle-label" title="Animate network signals for every step">
+              <input type="checkbox" id="anim-toggle" checked> STEP ANIMATION (VISUAL CHECKMARKS)
+            </label>
+          </div>
+        </div>
+
+        <!-- 2. Training Controls & Metrics Card -->
+        <div class="sidebar-card">
+          <h3>TRAINING CONTROLS</h3>
+          <div class="train-btns-grid">
+            <button id="btn-train" class="btn btn-primary" title="Start training loop">▶ TRAIN</button>
+            <button id="btn-pause" class="btn" title="Pause / resume training" disabled>⏸ PAUSE</button>
+            <button id="btn-step" class="btn" title="Train single sample step and see backprop changes">⏭ STEP</button>
+            <button id="btn-stop" class="btn btn-danger" title="Stop training" disabled>⏹ STOP</button>
+          </div>
+
+          <button id="btn-test-10" class="btn" title="Evaluate 10 random test images and log scorecard">
+            🎯 TEST 10 RANDOM (CLI EVALUATION)
+          </button>
+
+          <!-- Metrics Grid -->
+          <div class="metrics-grid" id="training-metrics">
+            <div class="metric-item">
+              <span class="metric-label">EPOCH</span>
+              <span class="metric-val" id="stat-epoch">0 / 0</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">SAMPLE LOSS</span>
+              <span class="metric-val" id="stat-loss">--</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">AVG LOSS</span>
+              <span class="metric-val" id="stat-avgloss">--</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">ACCURACY</span>
+              <span class="metric-val" id="stat-acc">0.0%</span>
+            </div>
+            <div class="metric-item" style="grid-column: span 2;">
+              <span class="metric-label">PROGRESS</span>
+              <span class="metric-val" id="stat-progress">0%</span>
+              <div class="progress-track">
+                <div class="progress-fill" id="progress-fill"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Interactive Custom Drawing Playground -->
+        <div class="sidebar-card">
+          <h3>
+            <span>CUSTOM DRAWING INPUT</span>
+            <span style="font-size: 0.7rem; color: var(--accent-cyan); font-weight: normal;">DRAW & PREDICT</span>
+          </h3>
+
+          <div class="draw-playground-row">
+            <!-- 280x280 Drawing Board -->
+            <div class="draw-pad-wrap">
+              <canvas id="draw-canvas"></canvas>
+            </div>
+
+            <!-- Downsampled 28x28 Preview & Tools -->
+            <div class="draw-side-col">
+              <div class="preview-28-box" title="Real-time 28×28 downsampled input vector fed to the network">
+                <canvas id="preview-canvas" width="28" height="28"></canvas>
+                <div class="preview-info">
+                  <strong>28×28 VECTOR</strong>
+                  <span>784 Floats (0.0-1.0)</span>
+                </div>
+              </div>
+
+              <div class="draw-tools-row">
+                <button id="btn-brush" class="btn btn-sm active">BRUSH</button>
+                <button id="btn-eraser" class="btn btn-sm">ERASE</button>
+                <button id="btn-clear-pad" class="btn btn-sm">CLEAR</button>
+                <button id="btn-center-pad" class="btn btn-sm" title="Center digit by center of mass">CENTER</button>
+              </div>
+
+              <div class="form-group">
+                <div class="form-label" style="font-size: 0.68rem;">
+                  <span>SIZE</span>
+                  <span id="brush-size-val" class="code-font">12px</span>
+                </div>
+                <input type="range" id="brush-size" min="4" max="28" value="12">
+              </div>
+
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <label class="toggle-label" style="font-size: 0.72rem;">
+                  <input type="checkbox" id="invert-toggle"> INVERT
+                </label>
+                <label class="btn btn-sm" style="margin-left: auto; cursor: pointer;">
+                  UPLOAD IMG
+                  <input type="file" id="image-upload-input" accept="image/*" hidden>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Custom Prediction Results -->
+          <div class="custom-pred-display">
+            <div>
+              <div style="font-size: 0.68rem; color: var(--text-dim); text-transform: uppercase;">PREDICTED DIGIT</div>
+              <div class="custom-pred-digit" id="custom-pred-result">--</div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: 0.68rem; color: var(--text-dim); text-transform: uppercase;">CONFIDENCE</div>
+              <div class="code-font" id="custom-pred-conf" style="font-size: 1.1rem; font-weight: 700; color: var(--accent-cyan);">0.0%</div>
+            </div>
+            <button id="btn-predict-drawing" class="btn btn-primary btn-sm">PREDICT</button>
+          </div>
+        </div>
+
+        <!-- 4. Real-time Step Log Table ("during train, see each steps, check mark") -->
+        <div class="sidebar-card">
+          <h3>
+            <span>LIVE TRAINING STEPS & EVALUATION</span>
+            <button id="btn-clear-log" class="btn btn-sm" style="padding: 2px 8px; font-size: 0.68rem;">CLEAR</button>
+          </h3>
+
+          <div class="step-log-panel">
+            <table class="step-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>SAMPLE</th>
+                  <th>TARGET</th>
+                  <th>PRED</th>
+                  <th>CONF</th>
+                  <th>LOSS</th>
+                  <th>EVAL</th>
+                </tr>
+              </thead>
+              <tbody id="step-log-rows">
+                <tr class="step-row info">
+                  <td colspan="7" class="step-info-cell">Ready to train. Click TRAIN or STEP to see live evaluations with checkmarks.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- Boot Simulation -->
+  <script type="module" src="js/simulation.js"></script>
+</body>
+</html>
